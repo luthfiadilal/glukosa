@@ -1,9 +1,9 @@
 import { useState, useRef } from "react";
-import Webcam from "react-webcam";
 import { predictGlukosaUseCase } from "../../application/predictGlukosa";
 import Modal from "../Components/Modal";
 import Spinner from "../Components/Spinner";
 import { Icon } from "@iconify/react";
+import CameraWithPinchZoom from "../Components/CameraControl";
 
 export default function Home() {
   const [image, setImage] = useState(null);
@@ -16,11 +16,11 @@ export default function Home() {
   const fileInputRef = useRef(null);
   const webcamRef = useRef(null);
 
-  const videoConstraints = {
-    facingMode: { ideal: "environment" },
-    width: 640,
-    height: 480,
-  };
+  // const videoConstraints = {
+  //   facingMode: { ideal: "environment" },
+  //   width: 640,
+  //   height: 480,
+  // };
 
   const takePicture = () => {
     if (webcamRef.current) {
@@ -106,13 +106,7 @@ export default function Home() {
             {/* Camera View */}
             {showCamera ? (
               <div className="space-y-4">
-                <Webcam
-                  ref={webcamRef}
-                  audio={false}
-                  screenshotFormat="image/jpeg"
-                  videoConstraints={videoConstraints}
-                  className="w-full h-[400px] rounded-md bg-gray-800 object-cover"
-                />
+                <CameraWithPinchZoom webcamRef={webcamRef} />
 
                 <div className="flex justify-center flex-wrap items-center gap-4">
                   <button
