@@ -73,7 +73,7 @@ export default function Home() {
       suggestion: "Keep up your current routine and balanced diet.",
     },
     Moderate: {
-      range: ">10–20 mg/dL",
+      range: ">5-10 mg/dL",
       interpretation:
         "The glucose level is elevated, suggesting possible hyperglycemia.",
       suggestion:
