@@ -2,7 +2,7 @@ export async function predictGlukosaAPI(imageFile) {
   const formData = new FormData();
   formData.append("file", imageFile);
 
-  const response = await fetch("https://687f13120b43.ngrok-free.app/predict", {
+  const response = await fetch("https://fff3c531b274.ngrok-free.app/predict", {
     method: "POST",
     body: formData,
   });
