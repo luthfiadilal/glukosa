@@ -26,8 +26,6 @@ export const authService = {
 
                 if (uploadError) {
                     console.error('Error uploading image:', uploadError)
-                    // Optional: Handle upload error (e.g., skip image or fail registration?)
-                    // For now, we'll continue without image if upload fails, or you could throw.
                 } else {
                     const { data: publicUrlData } = supabase.storage
                         .from('profile-images')
@@ -52,8 +50,6 @@ export const authService = {
                 ])
 
             if (profileError) {
-                // Cleanup: Delete auth user if profile creation fails (optional but recommended for consistency)
-                // await supabase.auth.admin.deleteUser(authData.user.id)
                 throw profileError
             }
         }
@@ -101,5 +97,38 @@ export const authService = {
 
         if (error) throw error
         return data
+    },
+
+    async updateProfileImage(userId, imageFile) {
+        try {
+            // Generate unique file name
+            const fileExt = imageFile.name.split('.').pop()
+            const fileName = `${userId}-${Date.now()}.${fileExt}`
+            const filePath = `${userId}/${fileName}`
+
+            // Upload to Supabase storage
+            const { error: uploadError } = await supabase.storage
+                .from('profile-images')
+                .upload(filePath, imageFile, { upsert: true })
+
+            if (uploadError) throw uploadError
+
+            // Get public URL
+            const { data: { publicUrl } } = supabase.storage
+                .from('profile-images')
+                .getPublicUrl(filePath)
+
+            // Update profile with new image URL
+            const { data, error } = await supabase
+                .from('profiles')
+                .update({ img_profile: publicUrl })
+                .eq('id', userId)
+                .select()
+
+            if (error) throw error
+            return data
+        } catch (error) {
+            throw error
+        }
     }
 }

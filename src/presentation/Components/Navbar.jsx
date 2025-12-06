@@ -1,10 +1,10 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Icon } from '@iconify/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { authService } from '../../domain/services/authService';
+import dayjs from 'dayjs';
 
 const Navbar = () => {
     const { user, signOut } = useAuth();
@@ -53,10 +53,7 @@ const Navbar = () => {
 
     const calculateAge = (dob) => {
         if (!dob) return '';
-        const birthDate = new Date(dob);
-        const difference = Date.now() - birthDate.getTime();
-        const ageDate = new Date(difference);
-        return Math.abs(ageDate.getUTCFullYear() - 1970);
+        return dayjs().diff(dayjs(dob), 'year');
     }
 
     const menuItems = [
