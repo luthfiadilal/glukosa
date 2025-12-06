@@ -115,6 +115,7 @@ export default function Home() {
           result: {
             prediction: mlResult.prediction,
             probabilities: mlResult.probabilities,
+            imageUrl: predictionRecord.image_url, // Add image URL
             ...desc,
           },
         },

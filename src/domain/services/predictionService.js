@@ -5,9 +5,12 @@ export const predictionService = {
     async createPrediction(userId, imageFile) {
         try {
             // 1. Upload image to storage
+            // Folder must be userId (required by storage policy)
+            // But filename is simplified
             const fileExt = imageFile.name.split('.').pop();
-            const fileName = `${userId}-${Date.now()}.${fileExt}`;
-            const filePath = `${userId}/${fileName}`;
+            const timestamp = Date.now();
+            const fileName = `pred_${timestamp}.${fileExt}`;
+            const filePath = `${userId}/${fileName}`; // userId folder required by policy
 
             const { error: uploadError } = await supabase.storage
                 .from('prediction-images')
