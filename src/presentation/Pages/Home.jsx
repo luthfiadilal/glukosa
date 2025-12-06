@@ -1,16 +1,20 @@
 import { useState, useRef } from "react";
-import Webcam from "react-webcam";
-import { predictGlukosaUseCase } from "../../application/predictGlukosa";
-import Modal from "../Components/Modal";
-import Spinner from "../Components/Spinner";
+import { useNavigate } from "react-router-dom";
 import { Icon } from "@iconify/react";
+import { motion, AnimatePresence } from "framer-motion";
+import Webcam from "react-webcam";
+import { useAuth } from "../context/AuthContext";
+import { useToast } from "../context/ToastContext";
+import { predictGlukosaAPI } from "../../infrastructure/glukosaApi";
+import { predictionService } from "../../domain/services/predictionService";
 
 export default function Home() {
+  const { user } = useAuth();
+  const toast = useToast();
+  const navigate = useNavigate();
   const [image, setImage] = useState(null);
   const [preview, setPreview] = useState(null);
-  const [result, setResult] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [showModal, setShowModal] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
 
   const fileInputRef = useRef(null);
@@ -22,6 +26,29 @@ export default function Home() {
     height: 480,
   };
 
+  const descriptions = {
+    High: {
+      range: ">20 mg/dL",
+      interpretation: "The glucose level is alarmingly high, closely associated with uncontrolled diabetes.",
+      suggestion: "Seek immediate medical assistance.",
+    },
+    Moderate: {
+      range: ">5-20 mg/dL",
+      interpretation: "The glucose level is elevated, suggesting possible hyperglycemia.",
+      suggestion: "Reduce your consumption of sugary foods and drinks, and regularly monitor your levels.",
+    },
+    Normal: {
+      range: "1–5 mg/dL",
+      interpretation: "The glucose level is within the normal range for saliva, indicating stability.",
+      suggestion: "Keep up your current routine and balanced diet.",
+    },
+    Low: {
+      range: "1–5 mg/dL",
+      interpretation: "The glucose level is within the normal range for saliva, indicating stability.",
+      suggestion: "Keep up your current routine and balanced diet.",
+    },
+  };
+
   const takePicture = () => {
     if (webcamRef.current) {
       const screenshot = webcamRef.current.getScreenshot();
@@ -31,7 +58,6 @@ export default function Home() {
           const file = new File([blob], "capture.jpg", { type: "image/jpeg" });
           setImage(file);
           setPreview(URL.createObjectURL(blob));
-          setResult(null);
           setShowCamera(false);
         });
     }
@@ -42,226 +68,217 @@ export default function Home() {
     if (file) {
       setImage(file);
       setPreview(URL.createObjectURL(file));
-      setResult(null);
+    }
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith('image/')) {
+      setImage(file);
+      setPreview(URL.createObjectURL(file));
     }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!image) return;
+    if (!image || !user) return;
 
     setIsLoading(true);
-    setResult(null);
+    let predictionRecord = null;
 
     try {
-      const prediction = await predictGlukosaUseCase(image);
-      setResult(prediction);
-      setShowModal(true);
+      // 1. Create initial prediction record with image upload
+      predictionRecord = await predictionService.createPrediction(user.id, image);
+
+      // 2. Call ML API for prediction
+      const mlResult = await predictGlukosaAPI(image);
+
+      // 3. Prepare results data
+      const desc = descriptions[mlResult.prediction] || descriptions.Normal;
+      const maxProb = Math.max(...Object.values(mlResult.probabilities));
+
+      const resultsData = {
+        label: mlResult.prediction,
+        confidenceScore: maxProb,
+        rangeValue: desc.range,
+        interpretation: desc.interpretation,
+        suggestion: desc.suggestion,
+      };
+
+      // 4. Update prediction record with results
+      await predictionService.updatePrediction(predictionRecord.id, resultsData);
+
+      // 5. Navigate to result page with data
+      navigate("/result", {
+        state: {
+          result: {
+            prediction: mlResult.prediction,
+            probabilities: mlResult.probabilities,
+            ...desc,
+          },
+        },
+      });
+
+      toast.success("Prediction completed successfully!");
     } catch (err) {
       console.error(err);
-      alert("An error occurred while making prediction.");
-    } finally {
+      toast.error("Failed to get prediction. Please try again.");
       setIsLoading(false);
     }
   };
 
-  const descriptions = {
-    Normal: {
-      range: "1–5 mg/dL",
-      interpretation:
-        "The glucose level is within the normal range for saliva, indicating stability.",
-      suggestion: "Keep up your current routine and balanced diet.",
-    },
-    Moderate: {
-      range: ">5-20 mg/dL",
-      interpretation:
-        "The glucose level is elevated, suggesting possible hyperglycemia.",
-      suggestion:
-        "Reduce your consumption of sugary foods and drinks, and regularly monitor your levels.",
-    },
-    High: {
-      range: ">20 mg/dL",
-      interpretation:
-        "The glucose level is alarmingly high, closely associated with uncontrolled diabetes.",
-      suggestion: "Seek immediate medical assistance.",
-    },
+  const resetForm = () => {
+    setImage(null);
+    setPreview(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   };
 
   return (
-    <div className="min-h-screen flex flex-col md:flex-row items-center justify-center bg-gradient-to-br from-blue-100 to-gray-100 p-6 md:px-[100px]">
-      {/* Left Section */}
-      <div className="flex-1 text-center md:text-left mb-4 md:mb-0">
-        <h1 className="md:text-[48px] text-[32px] font-extrabold mt-6 leading-tight text-gray-800">
-          Glucose <span className="text-blue-600">Detection</span>
-        </h1>
-        <p className="text-gray-600 md:text-[22px] mt-3 max-w-md">
-          Upload an image or use the camera to instantly detect glucose levels.
-        </p>
-      </div>
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50/30">
+      <div className="max-w-4xl mx-auto px-4 py-12">
+        {/* Header */}
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="text-center mb-12"
+        >
+          <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">
+            Glucose <span className="bg-gradient-to-r from-blue-600 to-blue-500 bg-clip-text text-transparent">Detection</span>
+          </h1>
+          <p className="text-gray-600 text-lg max-w-2xl mx-auto">
+            Upload an image or use the camera to instantly detect glucose levels with AI-powered analysis.
+          </p>
+        </motion.div>
 
-      {/* Right Section */}
-      <div className="flex-1 bg-white p-8 rounded-xl shadow-lg max-w-md w-full space-y-4">
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="border-2 border-dashed border-gray-300 p-4 rounded-lg text-center">
+        {/* Upload Section */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 max-w-2xl mx-auto"
+        >
+          <h2 className="text-xl font-semibold text-gray-900 mb-6">Upload Image</h2>
+
+          <form onSubmit={handleSubmit} className="space-y-6">
             {/* Camera View */}
-            {showCamera ? (
-              <div className="space-y-4">
-                <Webcam
-                  ref={webcamRef}
-                  audio={false}
-                  screenshotFormat="image/jpeg"
-                  videoConstraints={videoConstraints}
-                  className="w-full h-[400px] rounded-md bg-gray-800 object-cover"
-                />
-
-                <div className="flex justify-center flex-wrap items-center gap-4">
-                  <button
-                    type="button"
-                    onClick={takePicture}
-                    className="bg-white cursor-pointer border border-gray-200 hover:bg-gray-50 text-gray-800 px-4 py-2 rounded-lg transition-all duration-200 shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-amber-200 focus:ring-opacity-50 flex items-center space-x-2"
-                  >
-                    <Icon icon="solar:camera-bold" width="20" height="20" />
-                    <span>Take Photo</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setShowCamera(false)}
-                    className="bg-white cursor-pointer border border-gray-200 hover:bg-gray-50 text-gray-800 px-4 py-2 rounded-lg transition-all duration-200 shadow-sm hover:shadow-md flex items-center space-x-2"
-                  >
-                    <Icon
-                      icon="solar:close-circle-bold"
-                      width="20"
-                      height="20"
-                    />
-                    <span>Cancel</span>
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <>
-                {/* File Upload Button */}
-                <label className="cursor-pointer block mb-4">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileChange}
-                    className="hidden"
-                    ref={fileInputRef}
-                  />
-                  <div className="text-blue-700 font-medium bg-blue-100 hover:bg-blue-200 rounded px-4 py-2 inline-block transition">
-                    📁 Choose from Gallery
-                  </div>
-                </label>
-
-                <button
-                  type="button"
-                  onClick={() => setShowCamera(true)}
-                  className="text-blue-700 font-medium bg-blue-100 hover:bg-blue-200 rounded px-4 py-2 transition"
+            <AnimatePresence mode="wait">
+              {showCamera ? (
+                <motion.div
+                  key="camera"
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  className="space-y-4"
                 >
-                  📷 Open Camera
-                </button>
-              </>
-            )}
+                  <Webcam
+                    ref={webcamRef}
+                    audio={false}
+                    screenshotFormat="image/jpeg"
+                    videoConstraints={videoConstraints}
+                    className="w-full h-64 rounded-xl object-cover bg-gray-900"
+                  />
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={takePicture}
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors font-medium"
+                    >
+                      <Icon icon="heroicons:camera" className="w-5 h-5" />
+                      Capture
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowCamera(false)}
+                      className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors font-medium"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="upload"
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                >
+                  {/* Drag & Drop Zone */}
+                  <div
+                    onDrop={handleDrop}
+                    onDragOver={(e) => e.preventDefault()}
+                    className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-blue-400 transition-colors cursor-pointer"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <Icon icon="heroicons:cloud-arrow-up" className="w-16 h-16 mx-auto text-gray-400 mb-4" />
+                    <p className="text-gray-600 mb-2 font-medium">Drop your image here or click to browse</p>
+                    <p className="text-sm text-gray-400">Supports JPG, PNG up to 10MB</p>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileChange}
+                      className="hidden"
+                    />
+                  </div>
 
-            {/* Preview Image */}
-            {preview && (
-              <div className="mt-4">
-                <img
-                  src={preview}
-                  alt="Preview"
-                  className="mx-auto max-h-48 rounded-md border"
-                />
-              </div>
-            )}
-          </div>
+                  {/* Preview */}
+                  {preview && (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="mt-4 relative"
+                    >
+                      <img
+                        src={preview}
+                        alt="Preview"
+                        className="w-full h-64 object-cover rounded-xl border border-gray-200"
+                      />
+                      <button
+                        type="button"
+                        onClick={resetForm}
+                        className="absolute top-2 right-2 p-2 bg-red-500 hover:bg-red-600 text-white rounded-full shadow-lg transition-colors"
+                      >
+                        <Icon icon="heroicons:x-mark" className="w-4 h-4" />
+                      </button>
+                    </motion.div>
+                  )}
 
-          {/* Submit Button */}
-          <button
-            type="submit"
-            disabled={isLoading || !image}
-            className={`w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded transition disabled:opacity-50`}
-          >
-            {isLoading ? (
-              <div className="flex justify-center items-center">
-                <Spinner className="w-5 h-5 animate-spin" />
-              </div>
-            ) : (
-              "Detect Now"
-            )}
-          </button>
-        </form>
-      </div>
-
-      {/* Modal Result */}
-      <Modal
-        show={showModal}
-        onClose={() => setShowModal(false)}
-        title="Glucose Prediction Result"
-      >
-        {result ? (
-          <div className="flex flex-col items-center justify-center space-y-4 p-6">
-            <div className="w-20 h-20 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-4xl font-bold shadow">
-              🩸
-            </div>
-            <div className="text-center space-y-3">
-              <h3 className="text-xl font-semibold text-gray-800">
-                Prediction:
-              </h3>
-              <p
-                className={`text-2xl font-bold ${
-                  result.prediction === "High"
-                    ? "text-red-600"
-                    : result.prediction === "Moderate"
-                    ? "text-yellow-600"
-                    : "text-green-600"
-                }`}
-              >
-                {result.prediction}
-              </p>
-
-              {/* ✅ Descriptions */}
-              {descriptions[result.prediction] && (
-                <div className="mt-4 text-left bg-gray-50 p-4 rounded-lg shadow-inner">
-                  <p className="text-sm text-gray-600">
-                    <strong>Range:</strong>{" "}
-                    {descriptions[result.prediction].range}
-                  </p>
-                  <p className="text-sm text-gray-600 mt-1">
-                    <strong>Interpretation:</strong>{" "}
-                    {descriptions[result.prediction].interpretation}
-                  </p>
-                  <p className="text-sm text-gray-600 mt-1">
-                    <strong>Suggestion:</strong>{" "}
-                    {descriptions[result.prediction].suggestion}
-                  </p>
-                </div>
+                  {/* Action Buttons */}
+                  <div className="flex gap-3 mt-4">
+                    <button
+                      type="button"
+                      onClick={() => setShowCamera(true)}
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors font-medium"
+                    >
+                      <Icon icon="heroicons:camera" className="w-5 h-5" />
+                      Open Camera
+                    </button>
+                  </div>
+                </motion.div>
               )}
+            </AnimatePresence>
 
-              <h3 className="text-xl font-semibold text-gray-800 mt-6">
-                Probability:
-              </h3>
-              <ul>
-                {Object.entries(result.probabilities).map(([key, value]) => (
-                  <li key={key} className="text-gray-600 text-lg font-medium">
-                    {key}: {value.toFixed(2)}%
-                  </li>
-                ))}
-              </ul>
-            </div>
+            {/* Submit Button */}
             <button
-              onClick={() => setShowModal(false)}
-              className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md shadow"
+              type="submit"
+              disabled={isLoading || !image}
+              className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl transition-colors shadow-sm"
             >
-              Close
+              {isLoading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                  Analyzing...
+                </span>
+              ) : (
+                "Detect Glucose Level"
+              )}
             </button>
-          </div>
-        ) : (
-          <div className="p-6 text-center text-gray-500">
-            Data not available.
-          </div>
-        )}
-      </Modal>
+          </form>
+        </motion.div>
+      </div>
     </div>
   );
 }
