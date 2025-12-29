@@ -93,6 +93,19 @@ export default function PredictionResult() {
                         </p>
                     </div>
 
+                    {/* Image Preview */}
+                    {result.imageUrl && (
+                        <div className="px-8 pb-6">
+                            <div className="rounded-2xl overflow-hidden border-2 border-gray-200 shadow-sm">
+                                <img
+                                    src={result.imageUrl}
+                                    alt="Prediction sample"
+                                    className="w-full h-64 object-cover"
+                                />
+                            </div>
+                        </div>
+                    )}
+
                     {/* Label Badge */}
                     <div className="px-8 pb-6">
                         <div
